@@ -2,12 +2,19 @@
 #include <wiringPi.h>
 #include <limits.h>
 #include <unistd.h>
+#include <sys/time.h>
+#include <stdbool.h>
 static snd_seq_t *seq_handle;
 static int in_port;
 
 #define THRUPORTCLIENT 14
 #define THRUPORTPORT 0
 #define MY_NUM_PINS 6
+
+struct timeval now;
+int rc;
+unsigned long int lastplayed[MY_NUM_PINS]={0,0,0,0,0,0};
+bool doubletrigger[MY_NUM_PINS]={false,false,false,false,false,false};
 
 void midi_open(void)
 {
@@ -101,6 +108,7 @@ void resetPlayChannels() {
 
 void midi_process(snd_seq_event_t *ev)
 {
+    //printf("handled event %2d\n", ev->type);
     //If this event is a PGMCHANGE type, it's a request to map a channel to an instrument
     if( ev->type == SND_SEQ_EVENT_PGMCHANGE )  {
        printf("PGMCHANGE: channel %2d, %5d, %5d\n", ev->data.control.channel, ev->data.control.param,  ev->data.control.value);
@@ -126,6 +134,7 @@ void midi_process(snd_seq_event_t *ev)
     //Note on/off event
     else if ( ((ev->type == SND_SEQ_EVENT_NOTEON)||(ev->type == SND_SEQ_EVENT_NOTEOFF)) ) {
         
+	//printf("lastplayed ");
        //If it's on a channel I care about
        if( isPlayChannel(ev->data.note.channel) ) {
        
@@ -153,13 +162,34 @@ void midi_process(snd_seq_event_t *ev)
           if( isOn ) {
              //If pin is currently available to play a note, or if currently playing channel can be overriden due to higher priority channel
              if( pinNotes[pinIdx] == -1 || pinChannels[pinIdx] > ev->data.note.channel )  {
-                    
+                
+		//rc=gettimeofday(&now, NULL);
+		//printf("turned on  %u at %lu\n",pinIdx,now.tv_usec);    
                 if( (pinChannels[pinIdx] > ev->data.note.channel ) && pinNotes[pinIdx] != -1)  {
                    printf("OVERRIDING CHANNEL %i for %i\n", pinChannels[pinIdx], ev->data.note.channel);
                 }
                 //Write to the pin, save the note to pinNotes
                 //printf("Pin %i - %s %i %i \n", pinIdx, isOn ? "on" : "off", ev->data.note.note, ev->data.note.channel);       
-                digitalWrite(pinIdx, 1); 
+                
+
+		rc=gettimeofday(&now, NULL);
+  	        //if(rc==0) {
+		//printf("gettimeofday() successful.\n");
+		//printf("time = %u.%06u\n",
+                //now.tv_sec, now.tv_usec);
+		
+		long unsigned int currenttimestamp= now.tv_usec+now.tv_sec*100000;
+		
+		//printf("turned on %u before: %lu now: %lu diff: %lu\n",pinIdx,lastplayed[pinIdx],currenttimestamp,currenttimestamp-lastplayed[pinIdx]);
+		if (lastplayed[pinIdx]==0 || (currenttimestamp-lastplayed[pinIdx]>60000)||doubletrigger[pinIdx]){
+			digitalWrite(pinIdx, 1); 
+			doubletrigger[pinIdx]=false;
+		}else{
+			digitalWrite(pinIdx, 0);
+			doubletrigger[pinIdx]=true;
+			//printf("double note\n");
+		}
+		//lastplayed[pinIdx]=now.tv_usec;
                 pinNotes[pinIdx] = ev->data.note.note;
                 pinChannels[pinIdx] =  ev->data.note.channel;
              }
@@ -167,20 +197,24 @@ void midi_process(snd_seq_event_t *ev)
         
           //Pin is to be turned off
           else {
-             //If this is the note that turned the pin on..
+             //printf("lastplayed %u at %lu",pinIdx,now.tv_usec);
+		//If this is the note that turned the pin on..
              if( pinNotes[pinIdx] == ev->data.note.note && pinChannels[pinIdx] == ev->data.note.channel ) {
                 //Write to the pin, indicate that pin is available
                 //printf("Pin %i - %s %i %i \n", pinIdx, isOn ? "on" : "off", ev->data.note.note, ev->data.note.channel);       
                 digitalWrite(pinIdx, 0); 
                 pinNotes[pinIdx] = -1;
                 pinChannels[pinIdx] = INT_MAX;
+		rc=gettimeofday(&now, NULL);
+		lastplayed[pinIdx]=now.tv_usec+now.tv_sec*100000;
+		//printf("turned off  %u at %lu\n",pinIdx,now.tv_usec);
              }
           }
        }
     }
     
     else {
-       printf("Unhandled event %2d\n", ev->type);
+       //printf("Unhandled event %2d\n", ev->type);
    
     }
 
