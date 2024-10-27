@@ -1,4 +1,6 @@
 #include <alsa/asoundlib.h>
+
+
 #include <wiringPi.h>
 #include <limits.h>
 #include <unistd.h>
@@ -24,7 +26,7 @@ void midi_open(void)
     in_port = snd_seq_create_simple_port(seq_handle, "listen:in",
                       SND_SEQ_PORT_CAP_WRITE|SND_SEQ_PORT_CAP_SUBS_WRITE,
                       SND_SEQ_PORT_TYPE_APPLICATION);
- 
+    printf("port: %d\n",in_port);
     if( snd_seq_connect_from(seq_handle, in_port, THRUPORTCLIENT, THRUPORTPORT) == -1) {
        perror("Can't connect to thru port");
        exit(-1);
@@ -111,7 +113,7 @@ void midi_process(snd_seq_event_t *ev)
     //printf("handled event %2d\n", ev->type);
     //If this event is a PGMCHANGE type, it's a request to map a channel to an instrument
     if( ev->type == SND_SEQ_EVENT_PGMCHANGE )  {
-       printf("PGMCHANGE: channel %2d, %5d, %5d\n", ev->data.control.channel, ev->data.control.param,  ev->data.control.value);
+       //printf("PGMCHANGE: channel %2d, %5d, %5d\n", ev->data.control.channel, ev->data.control.param,  ev->data.control.value);
 
        //Clear pins state, this is probably the beginning of a new song
        clearPinsState();
@@ -133,7 +135,9 @@ void midi_process(snd_seq_event_t *ev)
 
     //Note on/off event
     else if ( ((ev->type == SND_SEQ_EVENT_NOTEON)||(ev->type == SND_SEQ_EVENT_NOTEOFF)) ) {
-        
+        if (ev->type == SND_SEQ_EVENT_NOTEON){
+//       		printf ("note: %u %u\n" , ev->data.note.note,ev->data.note.velocity);
+	}
 	//printf("lastplayed ");
        //If it's on a channel I care about
        if( isPlayChannel(ev->data.note.channel) ) {
@@ -166,7 +170,7 @@ void midi_process(snd_seq_event_t *ev)
 		//rc=gettimeofday(&now, NULL);
 		//printf("turned on  %u at %lu\n",pinIdx,now.tv_usec);    
                 if( (pinChannels[pinIdx] > ev->data.note.channel ) && pinNotes[pinIdx] != -1)  {
-                   printf("OVERRIDING CHANNEL %i for %i\n", pinChannels[pinIdx], ev->data.note.channel);
+                   //printf("OVERRIDING CHANNEL %i for %i\n", pinChannels[pinIdx], ev->data.note.channel);
                 }
                 //Write to the pin, save the note to pinNotes
                 //printf("Pin %i - %s %i %i \n", pinIdx, isOn ? "on" : "off", ev->data.note.note, ev->data.note.channel);       
@@ -226,9 +230,10 @@ int main()
 {
 
     //Start as a daemon
-    if( daemon(0,0) != 0) {
-      exit(1);
-    }
+      
+      if( daemon(0,0) != 0) {
+        exit(1);
+      }
     
     //Setup wiringPi
     if( wiringPiSetup() == -1) {
