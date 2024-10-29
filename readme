@@ -1,0 +1,5 @@
+needed libs:
+
+wiringpi (must be built)
+libasound2-dev
+
